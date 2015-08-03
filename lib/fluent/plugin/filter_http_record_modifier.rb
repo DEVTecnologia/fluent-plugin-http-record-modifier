@@ -22,6 +22,9 @@ module Fluent
     config_param :username, :string, :default => ''
     config_param :password, :string, :default => ''
     config_param :raise_on_error, :bool, :default => true
+    config_param :cache, :bool, :default => true
+    config_param :expire, :integer, :default => 600 #10 min
+    config_param :renew_time_key, :string, :default => nil
 
     def configure(conf)
       super
@@ -53,6 +56,8 @@ module Fluent
         @keep_keys = @keep_keys.split(',')
       end
 
+      @request_cache = Cache.new(@cache, @expire)
+
       @placeholder_expander = PlaceholderExpander.new({
         :log           => log,
         :auto_typecast => @auto_typecast,
@@ -77,8 +82,12 @@ module Fluent
       es.each do |time, record|
         last_record = record # for debug log
         req, uri = create_request(tag, time, record)
-        res = send_request(req, uri)
-        body = deserialize_body(res)
+        body = @request_cache.get(uri.to_s)
+        if body.nil?
+          res = send_request(req, uri)
+          body = deserialize_body(res)
+          @request_cache.set(uri.to_s, body)
+        end
         new_record = reform(time, record, placeholders, body)
         if @renew_time_key && new_record.has_key?(@renew_time_key)
           time = new_record[@renew_time_key].to_i
@@ -220,6 +229,34 @@ module Fluent
       rev_tag_suffix.reverse!
     end
 
+    class Cache
+      def initialize(cache, expire)
+        @data = {}
+        @cache = cache
+        @expire = expire
+      end
+
+      def get(key)
+        unless @data.has_key?(key) and @cache
+          return nil
+        end
+        if Time.now.to_i > @data[key]['time'] + @expire
+          @data.delete(key)
+          return nil
+        end
+        return @data[key]['value']
+      end
+
+      def set(key, value)
+        if @cache
+          @data[key] = {
+            'time' => Time.now.to_i,
+            'value' => value
+          }
+        end
+      end
+    end
+
     class PlaceholderExpander
       attr_reader :placeholders, :log
 
@@ -230,8 +267,7 @@ module Fluent
 
       def prepare_placeholders(time, record, opts)
         placeholders = { '${time}' => Time.at(time).to_s }
-        record.each {|key, value| crawl_placeholder(value, placeholders, "#{key}")
-}
+        record.each {|key, value| crawl_placeholder(value, placeholders, "#{key}")}
         opts.each do |key, value|
           if value.kind_of?(Array) # tag_parts, etc
             size = value.size
