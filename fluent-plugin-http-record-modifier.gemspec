@@ -4,7 +4,7 @@ $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
 
 Gem::Specification.new do |spec|
   spec.name          = "fluent-plugin-http-record-modifier"
-  spec.version       = "0.0.0"
+  spec.version       = "0.0.3"
   spec.authors       = ["Augusto Nishi"]
   spec.email         = ["augusto.nishi@gmail.com"]
   spec.summary       = %q{fluentd filter plugin for modifing record based on a HTTP request}

@@ -25,6 +25,7 @@ module Fluent
     config_param :cache, :bool, :default => true
     config_param :expire, :integer, :default => 600 #10 min
     config_param :renew_time_key, :string, :default => nil
+    config_param :remove_time_key, :bool, :default => true
 
     def configure(conf)
       super
@@ -91,6 +92,9 @@ module Fluent
         new_record = reform(time, record, placeholders, body)
         if @renew_time_key && new_record.has_key?(@renew_time_key)
           time = new_record[@renew_time_key].to_i
+          if @remove_time_key
+           new_record.delete(@renew_time_key) 
+          end
         end
         new_es.add(time, new_record)
       end
